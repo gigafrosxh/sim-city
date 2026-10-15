@@ -1,0 +1,21 @@
+<app-city-map />
+
+@if (game.cityId()) {
+  <app-top-bar (menu)="menuOpen.set(true)" />
+  <app-side-panel />
+  <app-tile-inspector />
+  <app-map-controls />
+  <app-toolbar />
+  <app-news-ticker />
+  @if (game.connection() === 'connecting') {
+    <div class="loading glass">Stadt wird geladen…</div>
+  }
+}
+<app-toasts />
+@if (game.helpOpen()) {
+  <app-help-overlay />
+}
+
+@if (!game.cityId() || menuOpen()) {
+  <app-start-screen [canClose]="!!game.cityId()" (closed)="menuOpen.set(false)" />
+}

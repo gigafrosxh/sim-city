@@ -33,6 +33,10 @@ export abstract class CityApi {
   abstract build(cityId: string, req: BuildRequest): Promise<BuildResult>;
   abstract setTaxes(cityId: string, taxRates: TaxRates): Promise<Budget>;
   abstract setSpeed(cityId: string, speed: GameSpeed): Promise<void>;
+  abstract takeLoan(cityId: string, amount: number): Promise<Budget>;
+  abstract repayLoan(cityId: string): Promise<Budget>;
+  /** Creates a new city from an exported {@link CityState} (save-game import). */
+  abstract importCity(city: CityState): Promise<CityState>;
 
   /**
    * Live stream for a city. Emits a `snapshot` first, then `tick`, `event`

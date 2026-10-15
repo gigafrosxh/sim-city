@@ -1,4 +1,4 @@
-# City-Sim API-Vertrag (v1)
+# City-Sim API-Vertrag (v1.1)
 
 Dieser Vertrag beschreibt die Schnittstelle zwischen dem Angular-Frontend (`frontend/`) und dem Backend.
 Das Frontend bringt eine vollständige Referenz-Implementierung der Simulation mit
@@ -40,13 +40,15 @@ Frontend-Umschaltung: `?api=http` in der URL oder im Startbildschirm unter „Ve
     "originX": 12, "originY": 7, // obere Ecke des Grundrisses
     "size": 1,                 // Kantenlänge des quadratischen Grundrisses
     "builtAt": 412,            // Tick des Baus bzw. letzten Stufenwechsels (Frontend animiert dann)
-    "variant": 3               // 0..3, rein kosmetisch, zufällig beim Bau
+    "variant": 3,              // 0..3, rein kosmetisch, zufällig beim Bau
+    "fire": 0                  // verbleibende Brand-Ticks, 0/fehlend = brennt nicht
   },
   "powered": true,
   "watered": false,
   "landValue": 54,             // 0..100, ganzzahlig
   "pollution": 3,              // 0..100, ganzzahlig
-  "crime": 12                  // 0..100, ganzzahlig
+  "crime": 12,                 // 0..100, ganzzahlig
+  "traffic": 0                 // 0..100, nur auf Straßen > 0
 }
 ```
 
@@ -54,7 +56,7 @@ Gebäude mit `size > 1` stehen auf **jedem** Feld ihres Grundrisses mit identisc
 (gleiche `originX/originY`).
 
 `BuildingType`: `road`, `residential`, `commercial`, `industrial`, `power_coal`, `power_solar`,
-`water_pump`, `police`, `fire`, `school`, `hospital`, `park`.
+`power_wind`, `water_pump`, `police`, `fire`, `school`, `hospital`, `park`, `stadium`, `city_hall`.
 
 ### Weitere Typen
 
@@ -63,21 +65,25 @@ GameDate   { year, month /*1..12*/, day /*1..30*/ }      // 30-Tage-Monate, Star
 TaxRates   { residential, commercial, industrial }      // 0..20 (Prozent), Standard 9
 Budget     { money, taxRates, lastMonthIncome, lastMonthExpenses,
              incomeBreakdown:  { residential, commercial, industrial },
-             expenseBreakdown: { roads, power, water, services } }
+             expenseBreakdown: { roads, power, water, services, loans },
+             loanBalance, loanPayment }
 Demand     { residential, commercial, industrial }      // jeweils -1..1, 2 Nachkommastellen
 CityStats  { population, jobs, commercialJobs, industrialJobs, unemployment /*0..1*/,
              powerSupply, powerDemand, waterSupply, waterDemand, happiness /*0..100*/,
-             avgLandValue, avgPollution, avgCrime, buildingCount, roadCount }
+             avgLandValue, avgPollution, avgCrime, buildingCount, roadCount,
+             avgTraffic, buildingsOnFire }
+Goal       { id, title, description, reward, progress, target, completed }
 HistoryEntry { tick, date, population, money, income, expenses, happiness, jobs }
 CityState  { id, name, width, height, seed, tick, date, speed /*0..3*/, tiles: Tile[],
-             budget, demand, stats, history: HistoryEntry[] /*max. 240 Monate*/ }
+             budget, demand, stats, history: HistoryEntry[] /*max. 240 Monate*/,
+             goals: Goal[] }
 CitySummary { id, name, width, height, population, money, date, updatedAt }
 GameEvent  { id, tick, date, severity: "info"|"success"|"warning"|"danger",
              code, message /*Deutsch, wird direkt angezeigt*/, x?, y? }
 ```
 
 `CatalogEntry` (Bau-Katalog): `{ tool, name, description, icon, category, cost, upkeep, size,
-powerSupply?, waterSupply?, powerUse?, waterUse?, radius?, hotkey? }`.
+powerSupply?, waterSupply?, powerUse?, waterUse?, radius?, hotkey?, unlockPopulation?, unique? }`.
 Die Standardwerte stehen in `frontend/src/app/core/catalog.ts` und in Abschnitt 4.
 
 ---
@@ -94,6 +100,9 @@ Die Standardwerte stehen in `frontend/src/app/core/catalog.ts` und in Abschnitt 
 | POST | `/api/cities/{id}/build` | `BuildRequest` | `BuildResult` |
 | PUT | `/api/cities/{id}/taxes` | `TaxRates` | `Budget` |
 | PUT | `/api/cities/{id}/speed` | `{ speed: 0\|1\|2\|3 }` | `204` (zusätzlich WS-Nachricht `speed`) |
+| POST | `/api/cities/{id}/loans` | `{ amount: 10000\|25000\|50000 }` | `Budget`; `409`, wenn schon ein Kredit läuft |
+| POST | `/api/cities/{id}/loans/repay` | `{}` | `Budget`; `409`, wenn kein Kredit oder zu wenig Geld |
+| POST | `/api/cities/import` | `CityState` (exportierte Datei) | `201` + `CityState` mit neuer `id` |
 
 ### Bauen
 
@@ -113,7 +122,11 @@ Die Standardwerte stehen in `frontend/src/app/core/catalog.ts` und in Abschnitt 
 ```
 
 `tool` ist eines von `road`, `zone_residential`, `zone_commercial`, `zone_industrial`, `dezone`,
-`bulldoze`, `power_coal`, `power_solar`, `water_pump`, `police`, `fire`, `school`, `hospital`, `park`.
+`bulldoze`, `power_coal`, `power_solar`, `power_wind`, `water_pump`, `police`, `fire`, `school`,
+`hospital`, `park`, `stadium`, `city_hall`.
+
+Vor jeder Platzierung prüft der Server `unlockPopulation` (Fehler „… wird ab N Einwohnern
+freigeschaltet“) und `unique` (Fehler „… gibt es nur einmal pro Stadt“).
 
 Das Frontend schickt bei Ziehen-Werkzeugen die komplette Feldliste (Linie bzw. Rechteck). Der Server
 validiert jedes Feld selbst, überspringt ungültige Felder und baut, bis das Geld nicht mehr reicht
@@ -125,7 +138,7 @@ validiert jedes Feld selbst, überspringt ungültige Felder und baut, bis das Ge
 | `zone_*` | kein Wasser, kein Gebäude, nicht schon gleiche Zone. Wald → Wiese | 20, +5 bei Wald |
 | `dezone` | Zone ohne Gebäude wird entfernt | 0 |
 | `bulldoze` | Gebäude: ganzer Grundriss wird entfernt (Zone bleibt erhalten). Sonst Wald → Wiese | 5 × size² × max(1, level); Wald 5 |
-| Gebäude (`power_coal` …) | `tiles[0]` ist die obere Ecke; alle Felder des Grundrisses müssen Land ohne Gebäude sein. Entfernt Zonen, Wald → Wiese | laut Katalog |
+| Gebäude (`power_coal` …) | `tiles[0]` ist die obere Ecke; alle Felder des Grundrisses müssen Land ohne Gebäude sein. Entfernt Zonen, Wald → Wiese. **1×1-Gebäude** (nicht `unique`) werden auf **jedes** Feld der Liste gesetzt (Parks per Fläche ziehen) | laut Katalog, je Gebäude |
 
 ---
 
@@ -141,7 +154,8 @@ validiert jedes Feld selbst, überspringt ungültige Felder und baut, bis das Ge
     "tick": 413, "date": { "year": 2001, "month": 2, "day": 23 },
     "changedTiles": [ /* nur geänderte Tiles, komplett */ ],
     "budget": { }, "demand": { }, "stats": { },
-    "history": { }                                     // nur am Monatsende
+    "history": { },                                    // nur am Monatsende
+    "goals": [ ]                                       // nur wenn sich ein Ziel geändert hat
 } }
 { "type": "event", "event": { /* GameEvent */ } }
 { "type": "speed", "speed": 2 }
@@ -158,7 +172,8 @@ spätestens beim Trennen.
 
 **Event-Codes:** `BUILDING_COMPLETED`, `POWER_SHORTAGE`, `POWER_RESTORED`, `WATER_SHORTAGE`,
 `HIGH_CRIME`, `HIGH_POLLUTION`, `HINT_POWER`, `MILESTONE_POPULATION`, `BANKRUPTCY_WARNING`,
-`YEAR_REPORT`. Neue Codes sind erlaubt; das Frontend zeigt jede `message` an.
+`YEAR_REPORT`, `FIRE`, `FIRE_EXTINGUISHED`, `BUILDING_BURNED`, `GOAL_COMPLETED`, `LOAN_TAKEN`,
+`LOAN_REPAID`. Das Frontend spielt bei `GOAL_COMPLETED`/`MILESTONE_POPULATION` und bei `danger` Töne ab. Neue Codes sind erlaubt; das Frontend zeigt jede `message` an.
 
 ---
 
@@ -179,6 +194,12 @@ Damit Offline-Modus und Server gleich spielen, gelten diese Regeln (Referenz: `s
 | Schule | 2×2 | 1500 | 100 | – | 20/10 | 12 |
 | Krankenhaus | 2×2 | 2500 | 150 | – | 30/20 | 12 |
 | Park | 1 | 150 | 5 | – | 0/0 | 4 |
+| Windrad | 1 | 900 | 20 | 80 Strom | 0/0 | – |
+| Stadion (ab 1.500 EW) | 2×2 | 8000 | 250 | – | 40/20 | 16 |
+| Rathaus (ab 1.000 EW, einmalig) | 2×2 | 6000 | 120 | +10 % Steuern | 20/10 | 14 |
+
+Freischaltungen: Schule ab 200, Solarpark ab 300, Krankenhaus ab 500, Rathaus ab 1.000,
+Stadion ab 1.500 Einwohnern.
 
 Zonengebäude: Einwohner `[0,10,40,120]`, Gewerbe-Jobs `[0,6,20,50]`, Industrie-Jobs `[0,10,25,45]` je
 Stufe. Verbrauch je Stufe: Strom W 2 / G 3 / I 4, Wasser W 2 / G 2 / I 3.
@@ -204,8 +225,19 @@ Startkapital 40.000, Steuersatz 9 %.
 5. **Nachfrage:** W = `(jobs×1,8 + 60 − pop) / max(120, pop×0,5)`,
    G = `(pop×0,25 + 15 − gJobs) / max(40, pop×0,25)`, I = `(pop×0,4 + 30 − iJobs) / max(60, pop×0,4)`;
    minus `(Steuer − 9) × 0,05`, W zusätzlich `+ (Zufriedenheit − 50)/200`; begrenzt auf −1..1.
-6. **Monatsende:** Einnahmen W `pop × Steuer × 0,1`, G `gJobs × Steuer × 0,15`,
-   I `iJobs × Steuer × 0,15`; Ausgaben = Unterhalt laut Katalog. Ergebnis als `history`-Eintrag.
+6. **Verkehr:** Zonengebäude erzeugen Verkehr im Umkreis 3 (W 4, G 6, I 5 × Stufe; Stadion 20/r4).
+   Straßen erhalten `traffic = min(100, Summe × 1,5)`. Verkehr erhöht die Verschmutzung (`+0,12 × Rohwert`)
+   und senkt den Bodenwert um `0,15 × max(0, Rohwert − 40)`. Stadion und Rathaus geben zusätzlich
+   Bodenwert +10 und Zufriedenheit +10 × Abdeckung.
+7. **Brände:** Ab Tick 360 entzündet sich jedes Gebäude (außer Straßen/Parks) mit
+   `0,000012 × Stufe × (2 bei Industrie) × (1 − Feuerwehrabdeckung)` pro Tick (`fire = 40`).
+   Brennende Gebäude verlieren 1 Tick (4 bei Abdeckung ≥ 0,3) und springen ungelöscht mit 1,2 % auf
+   Nachbarn über. Bei 0: mit Abdeckung gelöscht, sonst abgebrannt (Gebäude weg, Zone bleibt).
+8. **Ziele:** Bei Fortschritt ≥ Ziel wird die Belohnung einmalig gutgeschrieben (Liste in `GOAL_DEFS`,
+   `simulation.ts`).
+9. **Monatsende:** Einnahmen W `pop × Steuer × 0,1`, G `gJobs × Steuer × 0,15`,
+   I `iJobs × Steuer × 0,15` (mit Rathaus × 1,1); Ausgaben = Unterhalt laut Katalog plus Kreditrate.
+   Kredit: Betrag + 10 % Zinsen, in 24 Raten. Ergebnis als `history`-Eintrag.
 
 ---
 

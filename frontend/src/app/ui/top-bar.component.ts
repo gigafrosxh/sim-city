@@ -53,9 +53,14 @@ import { GameSpeed } from '../core/models';
         <span class="label">Stimmung</span>
         <span class="value">{{ mood() }} {{ game.stats()?.happiness ?? 50 }}%</span>
       </div>
-      <button class="icon-btn glass" (click)="cycleLighting()" [title]="lightingTitle()">
-        {{ lightingIcon() }}
-      </button>
+      <div class="opts glass">
+        <button (click)="cycleLighting()" [title]="lightingTitle()">{{ lightingIcon() }}</button>
+        <button (click)="game.weatherEnabled.set(!game.weatherEnabled())" [title]="game.weatherEnabled() ? 'Wetter aus' : 'Wetter an'" [class.off]="!game.weatherEnabled()">🌦️</button>
+        <button (click)="game.soundEnabled.set(!game.soundEnabled())" [title]="game.soundEnabled() ? 'Ton aus' : 'Ton an'">{{ game.soundEnabled() ? '🔊' : '🔇' }}</button>
+        <button (click)="game.screenshot()" title="Screenshot speichern">📷</button>
+        <button (click)="game.toggleFullscreen()" title="Vollbild (F)">⛶</button>
+        <button (click)="game.helpOpen.set(true)" title="Hilfe & Tastenkürzel (H)">❓</button>
+      </div>
       <button class="icon-btn glass" (click)="menu.emit()" title="Städte & Einstellungen">☰</button>
     </div>
   `,
@@ -183,6 +188,26 @@ import { GameSpeed } from '../core/models';
         transform: translateY(-8px);
       }
     }
+    .opts {
+      display: flex;
+      gap: 2px;
+      padding: 4px;
+    }
+    .opts button {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--text);
+      font-size: 16px;
+    }
+    .opts button:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .opts button.off {
+      opacity: 0.4;
+    }
     .icon-btn {
       width: 42px;
       height: 42px;
@@ -200,6 +225,9 @@ import { GameSpeed } from '../core/models';
         margin: 0;
       }
       .stat:nth-child(3) {
+        display: none;
+      }
+      .opts button:nth-child(n + 3) {
         display: none;
       }
     }

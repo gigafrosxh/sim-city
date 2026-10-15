@@ -60,6 +60,15 @@ const NAMES = ['Neustadt', 'Sonnenberg', 'Havenburg', 'Lindenau', 'Rheinhafen', 
             @if (cities().length === 0 && !loadError()) {
               <div class="empty">Noch keine Städte vorhanden.</div>
             }
+            <div class="io">
+              <label class="file-btn">
+                📂 Spielstand importieren
+                <input type="file" accept=".json,application/json" (change)="importFile($event)" hidden />
+              </label>
+              @if (game.cityId()) {
+                <button type="button" class="file-btn" (click)="game.exportCity()">💾 Aktuelle Stadt exportieren</button>
+              }
+            </div>
             <ul class="cities">
               @for (c of cities(); track c.id) {
                 <li>
@@ -97,6 +106,7 @@ const NAMES = ['Neustadt', 'Sonnenberg', 'Havenburg', 'Lindenau', 'Rheinhafen', 
           <span><kbd>WASD</kbd> Kamera</span>
           <span><kbd>Mausrad</kbd> Zoom</span>
           <span><kbd>Leertaste</kbd> Pause</span>
+          <span><kbd>H</kbd> Hilfe</span>
         </footer>
       </div>
     </div>
@@ -219,6 +229,24 @@ const NAMES = ['Neustadt', 'Sonnenberg', 'Havenburg', 'Lindenau', 'Rheinhafen', 
     }
     .primary:disabled {
       opacity: 0.6;
+    }
+    .io {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .file-btn {
+      flex-direction: row;
+      margin: 0;
+      flex: 1;
+      justify-content: center;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px dashed var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
     }
     .cities {
       list-style: none;
@@ -370,6 +398,19 @@ export class StartScreenComponent implements OnInit {
     if (this.game.cityId() === c.id) this.game.close();
     await this.game.api.deleteCity(c.id);
     await this.refresh();
+  }
+
+  async importFile(e: Event): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      await this.game.importCity(file);
+      this.closed.emit();
+    } catch {
+      // The game service already shows a toast.
+    }
   }
 
   applyConnection(): void {

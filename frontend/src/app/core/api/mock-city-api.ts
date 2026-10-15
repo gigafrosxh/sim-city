@@ -97,6 +97,37 @@ export class MockCityApi extends CityApi {
     rc.subject.next({ type: 'speed', speed });
   }
 
+  async takeLoan(cityId: string, amount: number): Promise<Budget> {
+    return this.budgetAction(cityId, (sim) => sim.takeLoan(amount));
+  }
+
+  async repayLoan(cityId: string): Promise<Budget> {
+    return this.budgetAction(cityId, (sim) => sim.repayLoan());
+  }
+
+  async importCity(city: CityState): Promise<CityState> {
+    if (!city || !Array.isArray(city.tiles) || city.tiles.length !== city.width * city.height) {
+      throw new Error('Ungültige Spielstand-Datei');
+    }
+    const id = `city-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const copy: CityState = { ...clone(city), id, speed: 1 };
+    const sim = new CitySimulation({
+      city: copy,
+      internal: { rngState: copy.seed || 1, milestone: 0, eventSeq: 0, flags: {} },
+    });
+    this.running.set(id, { sim, subject: new Subject(), timer: null, subscribers: 0 });
+    this.persist(sim);
+    return clone(sim.city);
+  }
+
+  private budgetAction(cityId: string, fn: (sim: CitySimulation) => Budget): Budget {
+    const rc = this.load(cityId);
+    const budget = fn(rc.sim);
+    for (const event of rc.sim.drainEvents()) rc.subject.next({ type: 'event', event });
+    this.persist(rc.sim);
+    return clone(budget);
+  }
+
   connect(cityId: string): Observable<ServerMessage> {
     return new Observable<ServerMessage>((observer) => {
       let rc: RunningCity;

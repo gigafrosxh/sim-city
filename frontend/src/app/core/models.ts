@@ -12,12 +12,15 @@ export type ZoneType = 'residential' | 'commercial' | 'industrial';
 export type ServiceBuildingType =
   | 'power_coal'
   | 'power_solar'
+  | 'power_wind'
   | 'water_pump'
   | 'police'
   | 'fire'
   | 'school'
   | 'hospital'
-  | 'park';
+  | 'park'
+  | 'stadium'
+  | 'city_hall';
 
 export type BuildingType = 'road' | ZoneType | ServiceBuildingType;
 
@@ -31,7 +34,7 @@ export type Tool =
   | 'bulldoze'
   | ServiceBuildingType;
 
-export type Overlay = 'none' | 'power' | 'water' | 'landValue' | 'pollution' | 'crime';
+export type Overlay = 'none' | 'power' | 'water' | 'landValue' | 'pollution' | 'crime' | 'traffic';
 
 export type GameSpeed = 0 | 1 | 2 | 3;
 
@@ -53,6 +56,8 @@ export interface Building {
   builtAt: number;
   /** 0..3, purely cosmetic so neighbouring buildings look different. */
   variant: number;
+  /** Remaining ticks of an active fire; 0 or absent = not burning. */
+  fire?: number;
 }
 
 export interface Tile {
@@ -69,6 +74,8 @@ export interface Tile {
   pollution: number;
   /** 0..100 */
   crime: number;
+  /** 0..100, only meaningful on road tiles. */
+  traffic: number;
 }
 
 export interface GameDate {
@@ -91,7 +98,21 @@ export interface Budget {
   lastMonthIncome: number;
   lastMonthExpenses: number;
   incomeBreakdown: { residential: number; commercial: number; industrial: number };
-  expenseBreakdown: { roads: number; power: number; water: number; services: number };
+  expenseBreakdown: { roads: number; power: number; water: number; services: number; loans: number };
+  /** Outstanding loan balance including interest. */
+  loanBalance: number;
+  /** Monthly repayment while a loan is outstanding. */
+  loanPayment: number;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  reward: number;
+  progress: number;
+  target: number;
+  completed: boolean;
 }
 
 /** Each value is in the range -1..1 */
@@ -118,6 +139,8 @@ export interface CityStats {
   avgCrime: number;
   buildingCount: number;
   roadCount: number;
+  avgTraffic: number;
+  buildingsOnFire: number;
 }
 
 export interface HistoryEntry {
@@ -157,6 +180,7 @@ export interface CityState {
   demand: Demand;
   stats: CityStats;
   history: HistoryEntry[];
+  goals: Goal[];
 }
 
 export interface CreateCityRequest {
@@ -201,6 +225,8 @@ export interface TickUpdate {
   demand: Demand;
   stats: CityStats;
   history?: HistoryEntry;
+  /** Present when any goal changed during this tick. */
+  goals?: Goal[];
 }
 
 export type ServerMessage =
@@ -230,4 +256,12 @@ export interface CatalogEntry {
   /** Service coverage radius in tiles. */
   radius?: number;
   hotkey?: string;
+  /** Population needed before this tool can be used. */
+  unlockPopulation?: number;
+  /** Only one building of this type per city. */
+  unique?: boolean;
+}
+
+export interface LoanRequest {
+  amount: number;
 }

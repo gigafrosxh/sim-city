@@ -108,6 +108,21 @@ export const CATALOG: Record<Tool, CatalogEntry> = {
     powerSupply: 300,
     powerUse: 0,
     waterUse: 0,
+    unlockPopulation: 300,
+  },
+  power_wind: {
+    tool: 'power_wind',
+    name: 'Windrad',
+    description: 'Kleine, saubere Stromquelle. Ideal für den Anfang.',
+    icon: '🌬️',
+    category: 'utilities',
+    cost: 900,
+    upkeep: 20,
+    size: 1,
+    powerSupply: 80,
+    powerUse: 0,
+    waterUse: 0,
+    hotkey: 'O',
   },
   water_pump: {
     tool: 'water_pump',
@@ -161,6 +176,7 @@ export const CATALOG: Record<Tool, CatalogEntry> = {
     radius: 12,
     powerUse: 20,
     waterUse: 10,
+    unlockPopulation: 200,
   },
   hospital: {
     tool: 'hospital',
@@ -174,6 +190,7 @@ export const CATALOG: Record<Tool, CatalogEntry> = {
     radius: 12,
     powerUse: 30,
     waterUse: 20,
+    unlockPopulation: 500,
   },
   park: {
     tool: 'park',
@@ -188,6 +205,35 @@ export const CATALOG: Record<Tool, CatalogEntry> = {
     powerUse: 0,
     waterUse: 0,
     hotkey: 'G',
+  },
+  stadium: {
+    tool: 'stadium',
+    name: 'Stadion',
+    description: 'Großer Publikumsmagnet: macht Bürger in weitem Umkreis glücklich.',
+    icon: '🏟️',
+    category: 'recreation',
+    cost: 8000,
+    upkeep: 250,
+    size: 2,
+    radius: 16,
+    powerUse: 40,
+    waterUse: 20,
+    unlockPopulation: 1500,
+  },
+  city_hall: {
+    tool: 'city_hall',
+    name: 'Rathaus',
+    description: 'Wahrzeichen der Stadt: +10 % Steuereinnahmen und mehr Zufriedenheit. Nur einmal baubar.',
+    icon: '🏛️',
+    category: 'services',
+    cost: 6000,
+    upkeep: 120,
+    size: 2,
+    radius: 14,
+    powerUse: 20,
+    waterUse: 10,
+    unlockPopulation: 1000,
+    unique: true,
   },
 };
 
@@ -223,4 +269,10 @@ export const DRAG_AREA_TOOLS: Tool[] = [
   'zone_industrial',
   'dezone',
   'bulldoze',
+  'park',
 ];
+
+/** Loan options offered in the finance panel; interest is added up front. */
+export const LOAN_AMOUNTS = [10000, 25000, 50000];
+export const LOAN_INTEREST = 0.1;
+export const LOAN_MONTHS = 24;

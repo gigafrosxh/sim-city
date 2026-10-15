@@ -36,12 +36,16 @@ const GROUP_LABELS: Record<CatalogCategory, string> = {
                 [class.zone-c]="e.tool === 'zone_commercial'"
                 [class.zone-i]="e.tool === 'zone_industrial'"
                 [class.too-expensive]="e.cost > game.money()"
+                [class.locked]="isLocked(e)"
                 (click)="select(e.tool)"
                 (mouseenter)="hover.set(e)"
                 (mouseleave)="hover.set(null)"
                 [attr.aria-label]="e.name"
               >
                 <span class="icon">{{ e.icon }}</span>
+                @if (isLocked(e)) {
+                  <span class="lock">🔒</span>
+                }
                 @if (e.size > 1) {
                   <span class="size">{{ e.size }}×{{ e.size }}</span>
                 }
@@ -63,6 +67,9 @@ const GROUP_LABELS: Record<CatalogCategory, string> = {
           }
         </div>
         <div class="desc">{{ e.description }}</div>
+        @if (isLocked(e)) {
+          <div class="locked-note">🔒 Freigeschaltet ab {{ e.unlockPopulation }} Einwohnern</div>
+        }
         <div class="facts">
           @if (e.upkeep) {
             <span>Unterhalt {{ e.upkeep | money }}/Monat</span>
@@ -87,12 +94,23 @@ const GROUP_LABELS: Record<CatalogCategory, string> = {
     :host {
       position: absolute;
       bottom: 14px;
-      left: 50%;
-      transform: translateX(-50%);
+      /* Centred in the space right of the minimap card. */
+      left: 260px;
+      right: 12px;
+      display: flex;
+      justify-content: center;
       z-index: 10;
-      max-width: calc(100vw - 24px);
+      pointer-events: none;
+    }
+    @media (max-width: 900px) {
+      :host {
+        left: 12px;
+      }
     }
     .dock {
+      pointer-events: auto;
+      position: relative;
+      max-width: 100%;
       display: flex;
       gap: 6px;
       padding: 8px 10px 10px;
@@ -121,8 +139,8 @@ const GROUP_LABELS: Record<CatalogCategory, string> = {
     }
     .tool {
       position: relative;
-      width: 46px;
-      height: 46px;
+      width: 42px;
+      height: 42px;
       border-radius: 12px;
       border: 1px solid transparent;
       background: rgba(255, 255, 255, 0.06);
@@ -151,8 +169,23 @@ const GROUP_LABELS: Record<CatalogCategory, string> = {
     .tool.too-expensive {
       opacity: 0.45;
     }
+    .tool.locked .icon {
+      filter: grayscale(1);
+      opacity: 0.4;
+    }
+    .lock {
+      position: absolute;
+      right: 2px;
+      bottom: 0;
+      font-size: 12px;
+    }
+    .locked-note {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #ffc145;
+    }
     .icon {
-      font-size: 22px;
+      font-size: 20px;
       line-height: 1;
     }
     .size,
@@ -223,7 +256,12 @@ export class ToolbarComponent {
     return e.category === 'roads' || e.category === 'zones' || e.tool === 'bulldoze';
   }
 
+  isLocked(e: CatalogEntry): boolean {
+    return (e.unlockPopulation ?? 0) > (this.game.stats()?.population ?? 0);
+  }
+
   select(tool: Tool): void {
+    this.game.playSound('click');
     this.game.tool.set(this.game.tool() === tool && tool !== 'inspect' ? 'inspect' : tool);
   }
 
@@ -236,8 +274,21 @@ export class ToolbarComponent {
       return;
     }
     if (e.key === 'Escape') {
+      this.game.helpOpen.set(false);
       this.game.tool.set('inspect');
       this.game.selected.set(null);
+      return;
+    }
+    if (e.key === 'h' || e.key === 'H' || e.key === '?') {
+      this.game.helpOpen.set(!this.game.helpOpen());
+      return;
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      this.game.toggleFullscreen();
+      return;
+    }
+    if (e.key === 'k' || e.key === 'K') {
+      this.game.screenshot();
       return;
     }
     const key = e.key.toUpperCase();

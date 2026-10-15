@@ -26,6 +26,8 @@ export interface RenderState {
   preview: Preview | null;
   floaters: Floater[];
   population: number;
+  season: Season;
+  weather: Weather;
 }
 
 interface Car {
@@ -61,7 +63,20 @@ const TYPE_CODE: Record<BuildingType, number> = {
   school: 10,
   hospital: 11,
   park: 12,
+  power_wind: 13,
+  stadium: 14,
+  city_hall: 15,
 };
+
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export type Weather = 'clear' | 'rain' | 'snow';
+
+export function seasonOf(month: number): Season {
+  if (month === 12 || month <= 2) return 'winter';
+  if (month <= 5) return 'spring';
+  if (month <= 8) return 'summer';
+  return 'autumn';
+}
 
 export const ZONE_COLORS: Record<ZoneType, string> = {
   residential: '#4cd07d',
@@ -69,6 +84,9 @@ export const ZONE_COLORS: Record<ZoneType, string> = {
   industrial: '#ffc145',
 };
 
+const SNOW = ['#e9eef3', '#e3e9ef', '#eef2f6', '#dde5ec', '#e6ecf1', '#f0f4f7', '#dbe3ea', '#e8edf2'];
+const AUTUMN_GRASS = ['#8a9a46', '#919f4a', '#859443', '#97a44d', '#8b9844', '#9ca64f', '#82913f', '#94a24b'];
+const AUTUMN_LEAVES = ['#d9822b', '#c8552d', '#e0a43a', '#b8762c'];
 const GRASS = ['#5f9a46', '#62a049', '#5a9543', '#67a44c', '#5c9844', '#6aa64f', '#58923f', '#64a24b'];
 const SAND = ['#d8c48f', '#dcc995', '#d3be88'];
 const CAR_COLORS = ['#e74c3c', '#f1c40f', '#ecf0f1', '#3498db', '#2c3e50', '#e67e22', '#95a5a6', '#9b59b6'];
@@ -142,6 +160,8 @@ export class IsoRenderer {
   private night = 0;
   private roadCount = 0;
   private roadTiles: number[] = [];
+  private season: Season = 'summer';
+  private weatherDrops: { x: number; y: number; v: number }[] = [];
 
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
@@ -157,6 +177,7 @@ export class IsoRenderer {
     this.lastTime = now;
     this.now = now;
     this.night = s.night;
+    this.season = s.season;
     this.ensureBuffers(s);
 
     // Background.
@@ -232,8 +253,10 @@ export class IsoRenderer {
     // Pass 3: effects.
     this.updateParticles(dt);
     this.drawParticles();
+    this.drawFires(visible, s);
     this.drawWarnings(visible, s);
     if (s.night > 0.02) this.drawNight(s, cam, viewW, viewH, dpr);
+    this.drawWeather(s, viewW, viewH, dpr, dt);
     this.drawCursor(s);
     this.drawFloaters(s, now);
   }
@@ -388,6 +411,8 @@ export class IsoRenderer {
 
   private tree(u: number, v: number, scale: number, color: string): void {
     const ctx = this.ctx;
+    if (this.season === 'autumn') color = AUTUMN_LEAVES[Math.floor(hash2(Math.round(u * 10), Math.round(v * 10)) * 4)];
+    else if (this.season === 'winter') color = '#9fb09a';
     const p = project(u, v);
     const s = scale * this.hs;
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -426,13 +451,23 @@ export class IsoRenderer {
       { y: 15, w: 4, h: 8, c: '#3f8a42' },
     ];
     for (const l of layers) {
-      ctx.fillStyle = l.c;
+      ctx.fillStyle = this.season === 'winter' ? shade(l.c, 0.25) : l.c;
       ctx.beginPath();
       ctx.moveTo(p.x - l.w * s, p.y - l.y * s);
       ctx.lineTo(p.x + l.w * s, p.y - l.y * s);
       ctx.lineTo(p.x, p.y - (l.y + l.h) * s);
       ctx.closePath();
       ctx.fill();
+      if (this.season === 'winter') {
+        // Snow cap on each pine layer.
+        ctx.fillStyle = '#f4f8fb';
+        ctx.beginPath();
+        ctx.moveTo(p.x - l.w * 0.45 * s, p.y - (l.y + l.h * 0.55) * s);
+        ctx.lineTo(p.x + l.w * 0.45 * s, p.y - (l.y + l.h * 0.55) * s);
+        ctx.lineTo(p.x, p.y - (l.y + l.h) * s);
+        ctx.closePath();
+        ctx.fill();
+      }
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.beginPath();
       ctx.moveTo(p.x, p.y - l.y * s);
@@ -475,7 +510,9 @@ export class IsoRenderer {
         case 'industrial':
           return '#8f8a80';
         case 'park':
-          return '#6cbf55';
+          return this.season === 'winter' ? '#dfe7ec' : '#6cbf55';
+        case 'stadium':
+          return '#9aa39a';
         case 'power_solar':
           return '#8a9a6e';
         default:
@@ -488,8 +525,10 @@ export class IsoRenderer {
       case 'sand':
         return SAND[Math.floor(h * SAND.length)];
       case 'forest':
-        return '#4f8a3c';
+        return this.season === 'winter' ? '#d5dde4' : this.season === 'autumn' ? '#7d8a3c' : '#4f8a3c';
       default:
+        if (this.season === 'winter') return SNOW[Math.floor(h * SNOW.length)];
+        if (this.season === 'autumn') return AUTUMN_GRASS[Math.floor(h * AUTUMN_GRASS.length)];
         return GRASS[Math.floor(h * GRASS.length)];
     }
   }
@@ -652,6 +691,9 @@ export class IsoRenderer {
       case 'crime':
         if (t.crime > 2) color = `hsla(0,85%,50%,${0.15 + (t.crime / 100) * 0.7})`;
         break;
+      case 'traffic':
+        if (t.building?.type === 'road') color = `hsla(${120 - t.traffic * 1.2},85%,50%,0.7)`;
+        break;
     }
     if (!color) return;
     this.diamond(t.x, t.y, 1, 1);
@@ -742,6 +784,15 @@ export class IsoRenderer {
       case 'park':
         this.drawPark(x, y, variant);
         break;
+      case 'power_wind':
+        this.drawWind(x, y, seed);
+        break;
+      case 'stadium':
+        this.drawStadium(x, y);
+        break;
+      case 'city_hall':
+        this.drawCityHall(x, y, seed);
+        break;
       default:
         void size;
         void tile;
@@ -767,7 +818,7 @@ export class IsoRenderer {
       this.tree(x + 0.82, y + 0.2, 0.55, '#4f9d45');
       const wall = HOUSE_WALLS[v];
       const f = this.box(x + 0.22, y + 0.25, 0.55, 0.5, 11, wall);
-      this.gableRoof(x + 0.18, y + 0.21, 0.63, 0.58, 11, 9, HOUSE_ROOFS[v]);
+      this.gableRoof(x + 0.18, y + 0.21, 0.63, 0.58, 11, 9, this.season === 'winter' ? '#eef3f7' : HOUSE_ROOFS[v]);
       // Door and window.
       const ctx = this.ctx;
       const [p0, p1] = f.left;
@@ -1033,6 +1084,216 @@ export class IsoRenderer {
     this.tree(x + 0.25, y + 0.25, 0.8, '#58b04a');
     this.tree(x + 0.75, y + 0.2, 0.6, '#7ac35f');
     this.tree(x + 0.25, y + 0.8, 0.65, '#4f9d45');
+  }
+
+  private drawWind(x: number, y: number, seed: number): void {
+    const ctx = this.ctx;
+    this.box(x + 0.35, y + 0.35, 0.3, 0.3, 3, '#b8bcc0');
+    const base = project(x + 0.5, y + 0.5, 3);
+    const h = 58 * this.hs;
+    ctx.strokeStyle = '#eef1f4';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(base.x, base.y);
+    ctx.lineTo(base.x, base.y - h);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(base.x + 1, base.y);
+    ctx.lineTo(base.x + 1, base.y - h);
+    ctx.stroke();
+    const hub = { x: base.x, y: base.y - h };
+    const angle = this.now / 400 + seed;
+    ctx.strokeStyle = '#f7f9fb';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const a = angle + (k * Math.PI * 2) / 3;
+      ctx.moveTo(hub.x, hub.y);
+      // Rotor plane faces the viewer at an angle, so squash horizontally.
+      ctx.lineTo(hub.x + Math.cos(a) * 22 * this.hs * 0.6, hub.y + Math.sin(a) * 22 * this.hs);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#d0d5da';
+    ctx.beginPath();
+    ctx.arc(hub.x, hub.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawStadium(x: number, y: number): void {
+    const ctx = this.ctx;
+    const c = project(x + 1, y + 1);
+    const rx = TW * 0.85;
+    const ry = TH * 0.85;
+    const h = 16 * this.hs;
+    // Outer wall.
+    ctx.fillStyle = '#c9ccd1';
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI);
+    ctx.lineTo(c.x - rx, c.y - h);
+    ctx.ellipse(c.x, c.y - h, rx, ry, 0, Math.PI, 0, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI;
+      ctx.fillRect(c.x + Math.cos(a) * rx * 0.98 - 1, c.y + Math.sin(a) * ry - h + 3, 2, h - 5);
+    }
+    // Stands and pitch.
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y - h, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3e9b48';
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y - h + 2, rx * 0.7, ry * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y - h + 2, rx * 0.18, ry * 0.18, 0, 0, Math.PI * 2);
+    ctx.moveTo(c.x - rx * 0.35, c.y - h + 2 - ry * 0.35);
+    ctx.lineTo(c.x + rx * 0.35, c.y - h + 2 + ry * 0.35);
+    ctx.stroke();
+    // Floodlights.
+    for (const [du, dv] of [[0.1, 0.1], [1.9, 0.1], [0.1, 1.9], [1.9, 1.9]]) {
+      const p = project(x + du, y + dv);
+      ctx.strokeStyle = '#8d939a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y - 34 * this.hs);
+      ctx.stroke();
+      ctx.fillStyle = this.night > 0.3 ? '#fff6c8' : '#dfe3e6';
+      ctx.fillRect(p.x - 4, p.y - 38 * this.hs, 8, 4);
+      if (this.night > 0.3) this.lights.push([p.x - 5, p.y - 39 * this.hs, p.x + 5, p.y - 39 * this.hs, p.x + 5, p.y - 33 * this.hs, p.x - 5, p.y - 33 * this.hs]);
+    }
+  }
+
+  private drawCityHall(x: number, y: number, seed: number): void {
+    const ctx = this.ctx;
+    this.box(x + 0.1, y + 0.1, 1.8, 1.8, 4, '#cfc8b8');
+    const f = this.box(x + 0.25, y + 0.25, 1.5, 1.5, 26, '#efe9dc', 4);
+    this.windowBands(f.right, f.h, 2, '#8b7d62', seed);
+    // Columns on the front-left facade.
+    const [p0, p1] = f.left;
+    ctx.fillStyle = '#ffffff';
+    for (let k = 0; k < 6; k++) {
+      const a = 0.08 + k * 0.17;
+      const px = p0.x + (p1.x - p0.x) * a;
+      const py = p0.y + (p1.y - p0.y) * a - 4 * this.hs;
+      ctx.fillRect(px - 1.5, py - 22 * this.hs, 3, 22 * this.hs);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y - 4 * this.hs);
+    ctx.lineTo(p1.x, p1.y - 4 * this.hs);
+    ctx.lineTo(p1.x, p1.y - 24 * this.hs);
+    ctx.lineTo(p0.x, p0.y - 24 * this.hs);
+    ctx.closePath();
+    ctx.globalAlpha *= 0.4;
+    ctx.fill();
+    ctx.globalAlpha /= 0.4;
+    // Drum and dome.
+    const top = this.cylinder(x + 1, y + 1, 0.32, 12, '#f3eee3', 30);
+    ctx.fillStyle = '#5f9ea0';
+    ctx.beginPath();
+    ctx.ellipse(top.x, top.y, 0.32 * TW * 0.72, 0.32 * TW * 0.72 * 0.9, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y - 0.32 * TW * 0.65);
+    ctx.lineTo(top.x, top.y - 0.32 * TW * 0.65 - 10 * this.hs);
+    ctx.stroke();
+    // Flag.
+    const wave = Math.sin(this.now / 260) * 2;
+    ctx.fillStyle = '#e74c3c';
+    const fx = top.x;
+    const fy = top.y - 0.32 * TW * 0.65 - 10 * this.hs;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(fx + 10, fy + 2 + wave);
+    ctx.lineTo(fx, fy + 6);
+    ctx.fill();
+  }
+
+  // ----------------------------------------------------------------- fires & weather
+
+  private drawFires(visible: number[], s: RenderState): void {
+    const ctx = this.ctx;
+    for (const i of visible) {
+      const t = s.tiles[i];
+      const b = t.building;
+      if (!b?.fire || b.originX !== t.x || b.originY !== t.y) continue;
+      const height = b.type === 'residential' || b.type === 'commercial' || b.type === 'industrial' ? 10 + b.level * 16 : 22;
+      const base = project(b.originX + b.size / 2, b.originY + b.size / 2, height * 0.6);
+      const glow = ctx.createRadialGradient(base.x, base.y, 2, base.x, base.y, 30 * b.size);
+      glow.addColorStop(0, 'rgba(255,170,60,0.55)');
+      glow.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(base.x, base.y, 30 * b.size, 0, Math.PI * 2);
+      ctx.fill();
+      for (let k = 0; k < 6; k++) {
+        const ph = this.now / 120 + k * 1.7 + t.x;
+        const fx = base.x + Math.sin(ph * 0.7 + k) * 8 * b.size;
+        const fh = 10 + Math.abs(Math.sin(ph)) * 12;
+        ctx.fillStyle = k % 2 ? '#ffb02e' : '#ff5a1f';
+        ctx.beginPath();
+        ctx.moveTo(fx - 4, base.y);
+        ctx.quadraticCurveTo(fx - 3, base.y - fh * 0.6, fx, base.y - fh);
+        ctx.quadraticCurveTo(fx + 3, base.y - fh * 0.6, fx + 4, base.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+      this.emitSmoke(base.x, base.y - 18, 0.3, '#3d3d3d', 6);
+    }
+  }
+
+  private drawWeather(s: RenderState, viewW: number, viewH: number, dpr: number, dt: number): void {
+    const want = s.weather === 'clear' ? 0 : s.weather === 'rain' ? 260 : 180;
+    const drops = this.weatherDrops;
+    while (drops.length < want) drops.push({ x: Math.random() * viewW, y: Math.random() * viewH, v: 0.6 + Math.random() * 0.6 });
+    if (drops.length > want) drops.length = want;
+    if (!drops.length) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (s.weather === 'rain') {
+      ctx.fillStyle = 'rgba(40,60,90,0.12)';
+      ctx.fillRect(0, 0, viewW, viewH);
+      ctx.strokeStyle = 'rgba(190,210,240,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const d of drops) {
+        d.y += 900 * d.v * dt;
+        d.x -= 180 * d.v * dt;
+        if (d.y > viewH) {
+          d.y = -10;
+          d.x = Math.random() * (viewW + 100);
+        }
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x + 3, d.y - 14 * d.v);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      for (const d of drops) {
+        d.y += 70 * d.v * dt;
+        d.x += Math.sin(this.now / 900 + d.v * 10) * 20 * dt;
+        if (d.y > viewH) {
+          d.y = -5;
+          d.x = Math.random() * viewW;
+        }
+        ctx.moveTo(d.x + 1.8 * d.v, d.y);
+        ctx.arc(d.x, d.y, 1.8 * d.v, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // ----------------------------------------------------------------- cars

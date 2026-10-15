@@ -47,8 +47,8 @@ describe('CitySimulation', () => {
 
   it('bulldozes a whole multi-tile building', () => {
     const sim = flatCity();
-    sim.build({ tool: 'school', tiles: [{ x: 4, y: 4 }] });
-    expect(sim.city.tiles[5 * 32 + 5].building?.type).toBe('school');
+    sim.build({ tool: 'power_coal', tiles: [{ x: 4, y: 4 }] });
+    expect(sim.city.tiles[5 * 32 + 5].building?.type).toBe('power_coal');
     const res = sim.build({ tool: 'bulldoze', tiles: [{ x: 5, y: 5 }] });
     expect(res.ok).toBeTrue();
     expect(res.changedTiles.length).toBe(4);
@@ -62,5 +62,41 @@ describe('CitySimulation', () => {
     sim.setTaxes({ residential: 20, commercial: 20, industrial: 20 });
     expect(sim.city.demand.residential).toBeLessThan(low.residential);
     expect(sim.city.demand.industrial).toBeLessThan(low.industrial);
+  });
+
+  it('handles loans with interest and repayment', () => {
+    const sim = flatCity();
+    const start = sim.city.budget.money;
+    sim.takeLoan(10000);
+    expect(sim.city.budget.money).toBe(start + 10000);
+    expect(sim.city.budget.loanBalance).toBe(11000);
+    expect(() => sim.takeLoan(10000)).toThrow();
+    sim.repayLoan();
+    expect(sim.city.budget.loanBalance).toBe(0);
+    expect(sim.city.budget.money).toBe(start - 1000);
+  });
+
+  it('pays out goal rewards once', () => {
+    const sim = flatCity();
+    sim.build({ tool: 'road', tiles: line(10, 2, 13) });
+    const before = sim.city.budget.money;
+    sim.step();
+    const goal = sim.city.goals.find((g) => g.id === 'roads')!;
+    expect(goal.completed).toBeTrue();
+    expect(sim.city.budget.money).toBeGreaterThanOrEqual(before + goal.reward);
+  });
+
+  it('locks buildings until the population is reached', () => {
+    const sim = flatCity();
+    const res = sim.build({ tool: 'stadium', tiles: [{ x: 4, y: 4 }] });
+    expect(res.ok).toBeFalse();
+    expect(res.error).toContain('Einwohnern');
+  });
+
+  it('places 1x1 buildings on a dragged area', () => {
+    const sim = flatCity();
+    const res = sim.build({ tool: 'park', tiles: line(3, 2, 6) });
+    expect(res.placed).toBe(5);
+    expect(res.cost).toBe(5 * 150);
   });
 });

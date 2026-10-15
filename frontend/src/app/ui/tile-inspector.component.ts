@@ -28,6 +28,12 @@ const LEVEL_NAMES: Record<ZoneType, string[]> = {
         @if (i.detail) {
           <div class="detail">{{ i.detail }}</div>
         }
+        @if (i.burning) {
+          <div class="burning">🔥 Dieses Gebäude brennt!</div>
+        }
+        @if (i.isRoad) {
+          <div class="detail">Verkehrsaufkommen: {{ i.traffic }} %</div>
+        }
         <div class="flags">
           @if (i.utility) {
             <span [class.ok]="i.powered" [class.no]="!i.powered">⚡ {{ i.powered ? 'Strom' : 'Kein Strom' }}</span>
@@ -82,6 +88,12 @@ const LEVEL_NAMES: Record<ZoneType, string[]> = {
     }
     .detail {
       margin-top: 8px;
+      font-size: 12px;
+    }
+    .burning {
+      margin-top: 6px;
+      color: #ffb07a;
+      font-weight: 600;
       font-size: 12px;
     }
     .flags {
@@ -190,6 +202,8 @@ export class TileInspectorComponent {
       detail,
       utility: !!b || !!t.zone,
       removable: !!b || t.terrain === 'forest',
+      burning: !!b?.fire,
+      isRoad: b?.type === 'road',
     };
   });
 }

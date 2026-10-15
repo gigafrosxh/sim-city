@@ -66,6 +66,22 @@ export class HttpCityApi extends CityApi {
     );
   }
 
+  takeLoan(cityId: string, amount: number): Promise<Budget> {
+    return firstValueFrom(
+      this.http.post<Budget>(this.url(`/cities/${encodeURIComponent(cityId)}/loans`), { amount }),
+    );
+  }
+
+  repayLoan(cityId: string): Promise<Budget> {
+    return firstValueFrom(
+      this.http.post<Budget>(this.url(`/cities/${encodeURIComponent(cityId)}/loans/repay`), {}),
+    );
+  }
+
+  importCity(city: CityState): Promise<CityState> {
+    return firstValueFrom(this.http.post<CityState>(this.url('/cities/import'), city));
+  }
+
   connect(cityId: string): Observable<ServerMessage> {
     return webSocket<ServerMessage>({
       url: this.wsUrl(`/cities/${encodeURIComponent(cityId)}`),

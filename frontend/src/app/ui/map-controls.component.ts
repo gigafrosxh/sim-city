@@ -73,6 +73,7 @@ export class MapControlsComponent {
     { id: 'landValue', icon: '💎', label: 'Bodenwert', legend: 'Rot = niedrig, Grün = hoch' },
     { id: 'pollution', icon: '🏭', label: 'Verschmutzung', legend: 'Je dunkler, desto schmutziger' },
     { id: 'crime', icon: '🚨', label: 'Kriminalität', legend: 'Je röter, desto unsicherer' },
+    { id: 'traffic', icon: '🚗', label: 'Verkehr', legend: 'Grün = frei, Rot = Stau' },
   ];
 
   legend(): string | null {

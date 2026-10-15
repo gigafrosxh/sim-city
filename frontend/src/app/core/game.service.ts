@@ -2,6 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { CityApi } from './api/city-api';
 import { CATALOG } from './catalog';
+import { SoundName, SoundService } from './sound.service';
 import {
   Budget,
   CatalogEntry,
@@ -14,6 +15,7 @@ import {
   GameDate,
   GameEvent,
   GameSpeed,
+  Goal,
   HistoryEntry,
   Overlay,
   ServerMessage,
@@ -40,10 +42,18 @@ export interface Floater {
 
 export type ConnectionState = 'idle' | 'connecting' | 'live' | 'error';
 
+function errorMessage(err: unknown): string {
+  const e = err as { error?: { error?: string }; message?: string };
+  return e?.error?.error ?? e?.message ?? String(err);
+}
+
 /** Central client-side game state. All UI reads from these signals. */
 @Injectable({ providedIn: 'root' })
 export class GameService {
   readonly api = inject(CityApi);
+  private readonly sound = inject(SoundService);
+  /** Opens the keyboard help overlay. */
+  readonly helpOpen = signal(false);
 
   readonly cityId = signal<string | null>(null);
   readonly cityName = signal('');
@@ -56,6 +66,7 @@ export class GameService {
   readonly demand = signal<Demand>({ residential: 0, commercial: 0, industrial: 0 });
   readonly stats = signal<CityStats | null>(null);
   readonly history = signal<HistoryEntry[]>([]);
+  readonly goals = signal<Goal[]>([]);
   readonly events = signal<GameEvent[]>([]);
   readonly toasts = signal<Toast[]>([]);
   readonly connection = signal<ConnectionState>('idle');
@@ -67,6 +78,8 @@ export class GameService {
   readonly selected = signal<Coord | null>(null);
   /** Day/night lighting: automatic cycle, always day or always night. */
   readonly lighting = signal<'auto' | 'day' | 'night'>('auto');
+  readonly weatherEnabled = signal(true);
+  readonly soundEnabled = signal(true);
   /** Requests the map to centre on a tile (consumed by the map component). */
   readonly focusRequest = signal<{ x: number; y: number; seq: number } | null>(null);
 
@@ -163,6 +176,8 @@ export class GameService {
         break;
       case 'event':
         this.events.update((e) => [msg.event, ...e].slice(0, 100));
+        if (msg.event.code === 'GOAL_COMPLETED' || msg.event.code === 'MILESTONE_POPULATION') this.playSound('coin');
+        else if (msg.event.severity === 'danger') this.playSound('alert');
         this.toast(msg.event.severity, msg.event.message, msg.event.x !== undefined ? { x: msg.event.x, y: msg.event.y! } : undefined);
         break;
       case 'speed':
@@ -188,6 +203,7 @@ export class GameService {
     this.demand.set(city.demand);
     this.stats.set(city.stats);
     this.history.set(city.history);
+    this.goals.set(city.goals ?? []);
     this.tilesVersion.update((v) => v + 1);
   }
 
@@ -198,6 +214,7 @@ export class GameService {
     this.budget.set(u.budget);
     this.demand.set(u.demand);
     this.stats.set(u.stats);
+    if (u.goals) this.goals.set(u.goals);
     if (u.history) {
       const h = u.history;
       this.history.update((list) => [...list, h].slice(-240));
@@ -231,7 +248,11 @@ export class GameService {
           t0: performance.now(),
         });
       }
-      if (!result.ok && result.error) this.toast('warning', result.error);
+      if (result.ok) this.playSound(tool === 'bulldoze' ? 'bulldoze' : 'build');
+      if (!result.ok && result.error) {
+        this.playSound('error');
+        this.toast('warning', result.error);
+      }
     } catch (err) {
       this.toast('danger', `Bauen fehlgeschlagen: ${err instanceof Error ? err.message : err}`);
     }
@@ -268,6 +289,69 @@ export class GameService {
         this.toast('danger', 'Steuern konnten nicht gespeichert werden.');
       }
     }, 250);
+  }
+
+  async takeLoan(amount: number): Promise<void> {
+    await this.budgetCall((id) => this.api.takeLoan(id, amount));
+  }
+
+  async repayLoan(): Promise<void> {
+    await this.budgetCall((id) => this.api.repayLoan(id));
+  }
+
+  private async budgetCall(fn: (id: string) => Promise<Budget>): Promise<void> {
+    const id = this.cityId();
+    if (!id) return;
+    try {
+      this.budget.set(await fn(id));
+    } catch (err) {
+      this.toast('warning', errorMessage(err));
+    }
+  }
+
+  /** Downloads the current city as a JSON save file. */
+  async exportCity(): Promise<void> {
+    const id = this.cityId();
+    if (!id) return;
+    const city = await this.api.getCity(id);
+    const blob = new Blob([JSON.stringify(city)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${city.name.replace(/[^\w-]+/g, '_')}.citysim.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async importCity(file: File): Promise<void> {
+    try {
+      const city = JSON.parse(await file.text()) as CityState;
+      const created = await this.api.importCity(city);
+      this.open(created.id);
+      this.toast('success', `„${created.name}“ wurde importiert.`);
+    } catch (err) {
+      this.toast('danger', `Import fehlgeschlagen: ${errorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  playSound(name: SoundName): void {
+    if (this.soundEnabled()) this.sound.play(name);
+  }
+
+  /** Saves the current map view as PNG. */
+  screenshot(): void {
+    const canvas = document.querySelector<HTMLCanvasElement>('app-city-map canvas');
+    if (!canvas) return;
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = `${this.cityName().replace(/[^\w-]+/g, '_') || 'city'}-${this.date().year}-${this.date().month}.png`;
+    a.click();
+    this.playSound('click');
+  }
+
+  toggleFullscreen(): void {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.();
   }
 
   focus(x: number, y: number): void {

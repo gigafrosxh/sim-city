@@ -15,12 +15,15 @@ import { DRAG_AREA_TOOLS, DRAG_LINE_TOOLS, ZONE_FOR_TOOL } from '../core/catalog
 import { GameService } from '../core/game.service';
 import { Coord, ServiceBuildingType, Tool } from '../core/models';
 import { Camera, linePath, project, rectArea, screenToTile } from './iso';
-import { IsoRenderer, Preview } from './iso-renderer';
+import { IsoRenderer, Preview, seasonOf, Weather } from './iso-renderer';
 import { ViewportService } from './viewport.service';
 
 const SERVICE_TOOLS: Tool[] = [
   'power_coal',
   'power_solar',
+  'power_wind',
+  'stadium',
+  'city_hall',
   'water_pump',
   'police',
   'fire',
@@ -132,11 +135,12 @@ export class CityMapComponent {
     const end = this.dragEnd() ?? hover;
     if (!end) return null;
     let cells: Coord[];
-    if (SERVICE_TOOLS.includes(tool)) {
+    const dragArea = !!start && DRAG_AREA_TOOLS.includes(tool);
+    if (SERVICE_TOOLS.includes(tool) && !dragArea) {
       const entry = this.game.entry(tool);
       const o = { x: end.x - Math.floor((entry.size - 1) / 2), y: end.y - Math.floor((entry.size - 1) / 2) };
       cells = rectArea(o, { x: o.x + entry.size - 1, y: o.y + entry.size - 1 });
-      const valid = cells.every((c) => {
+      const valid = !this.locked(tool) && cells.every((c) => {
         const t = this.game.tileAt(c.x, c.y);
         return !!t && t.terrain !== 'water' && !t.building;
       });
@@ -190,6 +194,10 @@ export class CityMapComponent {
     const cost = this.cost();
     const name = this.game.entry(tool).name;
     const anyValid = p.valid.some(Boolean);
+    const unlock = this.game.entry(tool).unlockPopulation ?? 0;
+    if (this.locked(tool)) {
+      return { x: ptr.x, y: ptr.y, text: `🔒 ${name}: ab ${unlock.toLocaleString('de-DE')} Einwohnern`, bad: true };
+    }
     if (!anyValid) return { x: ptr.x, y: ptr.y, text: `${name}: hier nicht möglich`, bad: true };
     const bad = cost > this.game.money();
     const count = p.ghost ? '' : ` · ${p.valid.filter(Boolean).length} Felder`;
@@ -307,6 +315,8 @@ export class CityMapComponent {
         preview: this.preview(),
         floaters: g.floaters,
         population: g.stats()?.population ?? 0,
+        season: seasonOf(g.date().month),
+        weather: g.weatherEnabled() ? this.weatherAt(now, g.date().month) : 'clear',
       },
       this.cam,
       this.viewW,
@@ -314,6 +324,21 @@ export class CityMapComponent {
       this.dpr,
       now,
     );
+  }
+
+  private weather: Weather = 'clear';
+  private weatherUntil = 0;
+
+  /** Cosmetic weather that changes every 30-60 real seconds. */
+  private weatherAt(now: number, month: number): Weather {
+    if (now > this.weatherUntil) {
+      this.weatherUntil = now + 30000 + Math.random() * 30000;
+      const winter = seasonOf(month) === 'winter';
+      const r = Math.random();
+      this.weather = winter ? (r < 0.5 ? 'snow' : 'clear') : r < 0.25 ? 'rain' : 'clear';
+    }
+    if (this.weather === 'snow' && seasonOf(month) !== 'winter') this.weather = 'clear';
+    return this.weather;
   }
 
   /** Cosmetic day/night cycle: 4 real minutes per day. */
@@ -490,9 +515,14 @@ export class CityMapComponent {
     this.zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015));
   }
 
+  private locked(tool: Tool): boolean {
+    return (this.game.entry(tool).unlockPopulation ?? 0) > (this.game.stats()?.population ?? 0);
+  }
+
   private isValid(tool: Tool, c: Coord): boolean {
     const t = this.game.tileAt(c.x, c.y);
     if (!t) return false;
+    if (SERVICE_TOOLS.includes(tool)) return !this.locked(tool) && t.terrain !== 'water' && !t.building;
     const zone = ZONE_FOR_TOOL[tool];
     switch (tool) {
       case 'road':

@@ -65,6 +65,7 @@ export function generateTerrain(width: number, height: number, seed: number): Ti
         landValue: 0,
         pollution: 0,
         crime: 0,
+        traffic: 0,
       });
     }
   }

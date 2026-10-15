@@ -1,0 +1,15 @@
+:host {
+  position: fixed;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+}
+
+.loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 14px 22px;
+  z-index: 30;
+}
